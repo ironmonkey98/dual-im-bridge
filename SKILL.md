@@ -21,198 +21,38 @@ User data is stored at `~/.claude-to-im/`.
 
 Parse the first word of `$ARGUMENTS` as the subcommand.
 
+**IMPORTANT:** Before asking users for any platform credentials, first read `$SKILL_DIR/docs/setup-guides.md` to get the detailed step-by-step guidance for that platform. Present the relevant guide text to the user via AskUserQuestion so they know exactly what to do.
+
 ## Subcommands
 
 ### `setup`
 
-Run an interactive setup wizard. For every step that asks the user for input, include clear guidance text explaining where to get the value, what options to choose, and what format to use. Present each question with AskUserQuestion.
+Run an interactive setup wizard. Present each question with AskUserQuestion.
 
 **Step 1 — Choose channels**
 
-Ask which channels to enable (telegram, discord, feishu). Accept comma-separated input. Include this guidance:
-
-> Supported channels:
-> - **telegram** — Best for personal use. Supports inline permission buttons, streaming preview, and file attachments.
-> - **discord** — Good for team use. Supports server/channel/user-level access control.
-> - **feishu** (Lark) — For teams using Feishu/Lark. Supports event-based messaging.
->
-> You can enable multiple channels, e.g. `telegram,discord`
+Ask which channels to enable (telegram, discord, feishu). Accept comma-separated input. Briefly describe each:
+- **telegram** — Best for personal use. Streaming preview, inline permission buttons.
+- **discord** — Good for team use. Server/channel/user-level access control.
+- **feishu** (Lark) — For Feishu/Lark teams. Event-based messaging.
 
 **Step 2 — Collect tokens per channel**
 
-For each enabled channel, ask for the required credentials with detailed guidance:
+For each enabled channel, read `$SKILL_DIR/docs/setup-guides.md` and present the relevant platform guide to the user. Collect:
 
-#### Telegram
-
-Ask for **Bot Token** with this guidance:
-
-> **How to get a Telegram Bot Token:**
-> 1. Open Telegram and search for `@BotFather`
-> 2. Send `/newbot` to create a new bot
-> 3. Follow the prompts: choose a display name and a username (must end in `bot`)
-> 4. BotFather will reply with a token like `7823456789:AAF-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
-> 5. Copy the full token and paste it here
->
-> **Recommended bot settings** (send these commands to @BotFather):
-> - `/setprivacy` → choose your bot → `Disable` (so the bot can read group messages, only needed for group use)
-> - `/setcommands` → set commands like `new - Start new session`, `mode - Switch mode`
->
-> Token format: `数字:字母数字字符串` (e.g. `7823456789:AAF-xxx...xxx`)
-
-Then ask for **Allowed User IDs** (optional) with this guidance:
-
-> **How to find your Telegram User ID:**
-> 1. Search for `@userinfobot` on Telegram and start a chat
-> 2. It will reply with your User ID (a number like `123456789`)
-> 3. Alternatively, forward a message from yourself to `@userinfobot`
->
-> Enter comma-separated IDs to restrict access (recommended for security).
-> Leave empty to allow anyone who can message the bot.
-
-#### Discord
-
-Ask for **Bot Token** with this guidance:
-
-> **How to create a Discord Bot and get the token:**
-> 1. Go to https://discord.com/developers/applications
-> 2. Click **"New Application"** → give it a name → click **"Create"**
-> 3. Go to the **"Bot"** tab on the left sidebar
-> 4. Click **"Reset Token"** → copy the token (you can only see it once!)
->
-> **Required bot settings (on the Bot tab):**
-> - Under **Privileged Gateway Intents**, enable:
->   - ✅ **Message Content Intent** (required to read message text)
->
-> **Invite the bot to your server:**
-> 1. Go to the **"OAuth2"** tab → **"URL Generator"**
-> 2. Under **Scopes**, check: `bot`
-> 3. Under **Bot Permissions**, check: `Send Messages`, `Read Message History`, `View Channels`
-> 4. Copy the generated URL at the bottom and open it in your browser
-> 5. Select the server and click **"Authorize"**
->
-> Token format: a long base64-like string (e.g. `MTIzNDU2Nzg5.Gxxxxx.xxxxxxxxxxxxxxxxxxxxxxxx`)
-
-Then ask for **Allowed User IDs** (optional):
-
-> **How to find Discord User IDs:**
-> 1. In Discord, go to Settings → Advanced → enable **Developer Mode**
-> 2. Right-click on any user → **"Copy User ID"**
->
-> Enter comma-separated IDs. Leave empty to allow anyone in the server.
-
-Then ask for **Allowed Channel IDs** (optional):
-
-> **How to find Discord Channel IDs:**
-> 1. With Developer Mode enabled, right-click on any channel → **"Copy Channel ID"**
->
-> Enter comma-separated IDs to restrict the bot to specific channels.
-> Leave empty to allow all channels the bot can see.
-
-Then ask for **Allowed Guild (Server) IDs** (optional):
-
-> **How to find Discord Server IDs:**
-> 1. With Developer Mode enabled, right-click on the server icon → **"Copy Server ID"**
->
-> Enter comma-separated IDs. Leave empty to allow all servers the bot is in.
-
-#### Feishu / Lark
-
-Ask for **App ID** and **App Secret** with this guidance:
-
-> **How to create a Feishu/Lark app and get credentials:**
-> 1. Go to Feishu: https://open.feishu.cn/app or Lark: https://open.larksuite.com/app
-> 2. Click **"Create Custom App"**
-> 3. Fill in the app name and description → click **"Create"**
-> 4. On the app's **"Credentials & Basic Info"** page, find:
->    - **App ID** (like `cli_xxxxxxxxxx`)
->    - **App Secret** (click to reveal, like `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`)
->
-> **Step A — Batch-add required permissions:**
-> 1. On the app page, go to **"Permissions & Scopes"**
-> 2. Instead of adding permissions one by one, use **batch configuration**: click the **"Batch switch to configure by dependency"** link (or find the JSON editor)
-> 3. Paste the following JSON to add all required permissions at once:
-> ```json
-> {
->   "scopes": {
->     "tenant": [
->       "aily:file:read",
->       "aily:file:write",
->       "application:application.app_message_stats.overview:readonly",
->       "application:application:self_manage",
->       "application:bot.menu:write",
->       "contact:user.employee_id:readonly",
->       "corehr:file:download",
->       "event:ip_list",
->       "im:chat.access_event.bot_p2p_chat:read",
->       "im:chat.members:bot_access",
->       "im:message",
->       "im:message.group_at_msg:readonly",
->       "im:message.p2p_msg:readonly",
->       "im:message:readonly",
->       "im:message:send_as_bot",
->       "im:resource"
->     ],
->     "user": [
->       "aily:file:read",
->       "aily:file:write",
->       "im:chat.access_event.bot_p2p_chat:read"
->     ]
->   }
-> }
-> ```
-> 4. Click **"Save"** to apply all permissions
->
-> **Step B — Enable the bot:**
-> 1. Go to **"Add Features"** → enable **"Bot"**
-> 2. Set the bot name and description
->
-> **Step C — Configure Events & Callbacks (long connection):**
-> 1. Go to **"Events & Callbacks"** in the left sidebar
-> 2. Under **"Event Dispatch Method"**, select **"Long Connection"** (长连接 / WebSocket mode)
-> 3. Click **"Add Event"** and add these events:
->    - `im.message.receive_v1` — Receive messages
->    - `p2p_chat_create` — Bot added to chat (optional but recommended)
-> 4. Click **"Save"**
->
-> **Step D — Publish the app:**
-> 1. Go to **"Version Management & Release"** → click **"Create Version"**
-> 2. Fill in version number and update description → click **"Save"**
-> 3. Click **"Submit for Review"**
-> 4. For personal/test use, the admin can approve it directly in the **Feishu Admin Console** → **App Review**
-> 5. **Important:** The bot will NOT respond to messages until the version is approved and published
-
-Then ask for **Domain** (optional):
-
-> Default: `https://open.feishu.cn`
-> Use `https://open.larksuite.com` for Lark (international version).
-> Leave empty to use the default Feishu domain.
-
-Then ask for **Allowed User IDs** (optional):
-
-> Feishu user IDs (open_id format like `ou_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`).
-> You can find them in the Feishu Admin Console under user profiles.
-> Leave empty to allow all users who can message the bot.
+- **Telegram**: Bot Token, Allowed User IDs (optional)
+- **Discord**: Bot Token, Allowed User IDs (optional), Allowed Channel IDs (optional), Allowed Guild IDs (optional)
+- **Feishu**: App ID, App Secret, Domain (optional), Allowed User IDs (optional). Make sure to guide through all 4 steps (A: batch permissions, B: enable bot, C: events & callbacks with long connection, D: publish version).
 
 **Step 3 — General settings**
 
-Ask for default working directory, model, and mode with this guidance:
-
-> **Working Directory:** The directory Claude Code will operate in when handling IM messages.
-> Default: current directory (`$CWD`)
->
-> **Model:** Which Claude model to use. Options:
-> - `claude-sonnet-4-20250514` (default, fast and capable)
-> - `claude-opus-4-6` (most capable, slower)
-> - `claude-haiku-4-5-20251001` (fastest, for simple tasks)
->
-> **Mode:** How Claude Code operates:
-> - `code` (default) — Can read, write, and execute code
-> - `plan` — Planning only, no file modifications
-> - `ask` — Conversational, no tool use
+Ask for default working directory, model, and mode:
+- **Working Directory**: default `$CWD`
+- **Model**: `claude-sonnet-4-20250514` (default), `claude-opus-4-6`, `claude-haiku-4-5-20251001`
+- **Mode**: `code` (default), `plan`, `ask`
 
 **Step 4 — Write config and validate**
 
-After collecting all input:
 1. Only echo the last 4 characters of any token/secret in the confirmation summary
 2. Use Bash to create directory structure: `mkdir -p ~/.claude-to-im/{data,logs,runtime,data/messages}`
 3. Use Write to create `~/.claude-to-im/config.env` with all settings in KEY=VALUE format
@@ -246,12 +86,8 @@ Run: `bash "$SKILL_DIR/scripts/daemon.sh" logs N`
 
 1. Read current config from `~/.claude-to-im/config.env`
 2. Show current settings in a clear table format, with all secrets masked (only last 4 chars visible)
-3. Use AskUserQuestion to ask what the user wants to change. Present options like:
-   - Add/remove a channel
-   - Update a token
-   - Change working directory, model, or mode
-   - Update allowed users/channels
-4. When collecting new values, provide the same detailed guidance as in `setup` for the relevant field (e.g., if updating Discord token, show the full Discord token creation guide)
+3. Use AskUserQuestion to ask what the user wants to change
+4. When collecting new values, read `$SKILL_DIR/docs/setup-guides.md` and present the relevant guide for that field
 5. Update the config file atomically (write to tmp, rename)
 6. Re-validate any changed tokens
 7. Remind user: "Run `/claude-to-im stop` then `/claude-to-im start` to apply the changes."
