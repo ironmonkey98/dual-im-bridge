@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-CTI_HOME="$HOME/.claude-to-im"
+SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$SKILL_DIR/scripts/instance.sh"
+CTI_HOME="$(resolve_cti_home)"
 CONFIG_FILE="$CTI_HOME/config.env"
 PID_FILE="$CTI_HOME/runtime/bridge.pid"
 LOG_FILE="$CTI_HOME/logs/bridge.log"
@@ -33,11 +35,14 @@ else
 fi
 
 # --- Read runtime setting ---
-SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-CTI_RUNTIME=$(grep "^CTI_RUNTIME=" "$CONFIG_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d "'" | tr -d '"')
+CTI_RUNTIME=$(grep "^CTI_RUNTIME=" "$CONFIG_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d "'" | tr -d '"' || true)
 CTI_RUNTIME="${CTI_RUNTIME:-claude}"
 echo "Runtime: $CTI_RUNTIME"
 echo ""
+
+# --- Instance info ---
+INSTANCE_NAME="$(derive_instance_name "$CTI_HOME")"
+check "Instance name resolved (${INSTANCE_NAME})" 0
 
 # --- Claude CLI available (claude/auto modes) ---
 if [ "$CTI_RUNTIME" = "claude" ] || [ "$CTI_RUNTIME" = "auto" ]; then
@@ -53,9 +58,12 @@ if [ "$CTI_RUNTIME" = "claude" ] || [ "$CTI_RUNTIME" = "auto" ]; then
   fi
 
   # --- SDK cli.js resolvable ---
-  SDK_CLI="$SKILL_DIR/node_modules/@anthropic-ai/claude-agent-sdk/dist/cli.js"
-  if [ -f "$SDK_CLI" ]; then
-    check "Claude SDK cli.js exists ($SDK_CLI)" 0
+  SDK_CLI_DIST="$SKILL_DIR/node_modules/@anthropic-ai/claude-agent-sdk/dist/cli.js"
+  SDK_CLI_ROOT="$SKILL_DIR/node_modules/@anthropic-ai/claude-agent-sdk/cli.js"
+  if [ -f "$SDK_CLI_DIST" ]; then
+    check "Claude SDK cli.js exists ($SDK_CLI_DIST)" 0
+  elif [ -f "$SDK_CLI_ROOT" ]; then
+    check "Claude SDK cli.js exists ($SDK_CLI_ROOT)" 0
   else
     if [ "$CTI_RUNTIME" = "claude" ]; then
       check "Claude SDK cli.js exists (not found — run 'npm install' in $SKILL_DIR)" 1
@@ -91,13 +99,16 @@ if [ "$CTI_RUNTIME" = "codex" ] || [ "$CTI_RUNTIME" = "auto" ]; then
   fi
 
   # Check Codex auth: any of CTI_CODEX_API_KEY / CODEX_API_KEY / OPENAI_API_KEY,
-  # or `codex auth status` showing logged-in (interactive login).
+  # or `codex login status` / legacy `codex auth status` showing logged-in.
   CODEX_AUTH=1
   if [ -n "${CTI_CODEX_API_KEY:-}" ] || [ -n "${CODEX_API_KEY:-}" ] || [ -n "${OPENAI_API_KEY:-}" ]; then
     CODEX_AUTH=0
   elif command -v codex &>/dev/null; then
-    CODEX_AUTH_OUT=$(codex auth status 2>&1 || true)
-    if echo "$CODEX_AUTH_OUT" | grep -qiE 'logged.in|authenticated'; then
+    CODEX_AUTH_OUT=$(codex login status 2>&1 || true)
+    if ! echo "$CODEX_AUTH_OUT" | grep -qiE 'logged in|authenticated'; then
+      CODEX_AUTH_OUT=$(codex auth status 2>&1 || true)
+    fi
+    if echo "$CODEX_AUTH_OUT" | grep -qiE 'logged in|logged.in|authenticated'; then
       CODEX_AUTH=0
     fi
   fi
@@ -143,7 +154,7 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 # --- Load config for channel checks ---
-get_config() { grep "^$1=" "$CONFIG_FILE" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^["'"'"']//;s/["'"'"']$//'; }
+get_config() { grep "^$1=" "$CONFIG_FILE" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^["'"'"']//;s/["'"'"']$//' || true; }
 
 if [ -f "$CONFIG_FILE" ]; then
   CTI_CHANNELS=$(get_config CTI_ENABLED_CHANNELS)

@@ -9,7 +9,7 @@ await esbuild.build({
   outfile: 'dist/daemon.mjs',
   external: [
     // SDK must stay external — it spawns a CLI subprocess and resolves
-    // dist/cli.js relative to its own package location. Bundling it
+    // cli.js relative to its own package location. Bundling it
     // breaks that path resolution.
     '@anthropic-ai/claude-agent-sdk',
     '@openai/codex-sdk',

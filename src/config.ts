@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { resolveCtiHome } from "./instance.js";
 
 export interface Config {
   runtime: 'claude' | 'codex' | 'auto';
@@ -26,7 +27,11 @@ export interface Config {
   autoApprove?: boolean;
 }
 
-export const CTI_HOME = process.env.CTI_HOME || path.join(os.homedir(), ".claude-to-im");
+export const CTI_HOME = resolveCtiHome({
+  explicitHome: process.env.CTI_HOME,
+  explicitInstance: process.env.CTI_INSTANCE,
+  homeDir: os.homedir(),
+});
 export const CONFIG_PATH = path.join(CTI_HOME, "config.env");
 
 function parseEnvFile(content: string): Map<string, string> {

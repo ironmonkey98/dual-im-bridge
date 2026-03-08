@@ -243,3 +243,46 @@ npm run build      # 构建打包
 ## 许可
 
 [MIT](LICENSE)
+
+
+## 双运行时并行部署
+
+如果要让 **Claude Code** 和 **Codex** 同时可用，不要再共用一套桥接状态目录，而是为它们分别启动独立实例。
+
+推荐结构：
+
+- `CTI_INSTANCE=cc` → `~/.claude-to-im-cc` → 绑定 Claude Code 的飞书应用
+- `CTI_INSTANCE=codex` → `~/.claude-to-im-codex` → 绑定 Codex 的飞书应用
+
+示例：
+
+```bash
+# 启动 Claude Code 实例
+CTI_INSTANCE=cc bash ~/.codex/skills/claude-to-im/scripts/daemon.sh start
+
+# 启动 Codex 实例
+CTI_INSTANCE=codex bash ~/.codex/skills/claude-to-im/scripts/daemon.sh start
+
+# 分别检查状态
+CTI_INSTANCE=cc bash ~/.codex/skills/claude-to-im/scripts/daemon.sh status
+CTI_INSTANCE=codex bash ~/.codex/skills/claude-to-im/scripts/daemon.sh status
+```
+
+迁移建议：
+
+- 旧的单实例做法通常共用 `~/.claude-to-im`，容易出现会话串线、消息互抢。
+- 在飞书里同时启用两个机器人前，先把 Claude Code 和 Codex 迁移到不同实例。
+- 如果历史上已经混用过运行时，建议清理对应实例下的会话/绑定状态后再重新测试。
+
+一键管理两个实例：
+
+```bash
+# 同时启动 cc 与 codex
+bash ~/.codex/skills/claude-to-im/scripts/dual-instance.sh start
+
+# 同时查看状态
+bash ~/.codex/skills/claude-to-im/scripts/dual-instance.sh status
+
+# 同时跑诊断
+bash ~/.codex/skills/claude-to-im/scripts/dual-instance.sh doctor
+```

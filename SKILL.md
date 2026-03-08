@@ -21,7 +21,7 @@ allowed-tools:
 # Claude-to-IM Bridge Skill
 
 You are managing the Claude-to-IM bridge.
-User data is stored at `~/.claude-to-im/`.
+User data is stored in an instance home. Default is `~/.claude-to-im/`; named instances use `~/.claude-to-im-<instance>/` (for example `cc` or `codex`).
 
 First, locate the skill directory by finding this SKILL.md file:
 - Use Glob with pattern `**/skills/**/claude-to-im/SKILL.md` to find its path, then derive the skill root directory from it.
@@ -56,7 +56,7 @@ You can test this by checking if AskUserQuestion is in your available tools list
 
 ## Config check (applies to `start`, `stop`, `status`, `logs`, `reconfigure`, `doctor`)
 
-Before running any subcommand other than `setup`, check if `~/.claude-to-im/config.env` exists:
+Before running any subcommand other than `setup`, resolve the active instance home first (`CTI_HOME` or `CTI_INSTANCE`), then check whether its `config.env` exists:
 
 - **If it does NOT exist:**
   - In Claude Code: tell the user "No configuration found" and automatically start the `setup` wizard using AskUserQuestion.
@@ -113,7 +113,7 @@ Ask for runtime, default working directory, model, and mode:
 
 ### `start`
 
-**Pre-check:** Verify `~/.claude-to-im/config.env` exists (see "Config check" above). Do NOT proceed without it.
+**Pre-check:** Verify the active instance `config.env` exists (see "Config check" above). Do NOT proceed without it.
 
 Run: `bash "SKILL_DIR/scripts/daemon.sh" start`
 
@@ -159,3 +159,21 @@ Show results and suggest fixes for any failures. Common fixes:
 - **Never start the daemon without a valid config.env** — always check first, redirect to setup or show config example
 - The daemon runs as a background Node.js process managed by platform supervisor (launchd on macOS, setsid on Linux, WinSW/NSSM on Windows)
 - Config persists at `~/.claude-to-im/config.env` — survives across sessions
+
+
+## Multi-instance operation
+
+When Claude Code and Codex must both stay available, run them as separate named instances instead of sharing the default home.
+
+Recommended pattern:
+
+- Claude Code bot → `CTI_INSTANCE=cc` → `~/.claude-to-im-cc`
+- Codex bot → `CTI_INSTANCE=codex` → `~/.claude-to-im-codex`
+
+For all lifecycle commands (`start`, `stop`, `status`, `logs`, `doctor`), always target the intended instance explicitly when dual-bot mode is enabled.
+
+For convenience, dual-bot deployments can also be managed with:
+
+- `bash "SKILL_DIR/scripts/dual-instance.sh" start`
+- `bash "SKILL_DIR/scripts/dual-instance.sh" status`
+- `bash "SKILL_DIR/scripts/dual-instance.sh" doctor`

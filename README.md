@@ -116,6 +116,34 @@ Open your IM app and send a message to your bot. Claude Code will respond.
 
 When Claude needs to use a tool (edit a file, run a command), you'll see a permission prompt with **Allow** / **Deny** buttons right in the chat.
 
+## Multi-instance
+
+The bridge now supports running multiple bots side by side on the same machine.
+
+- Default instance keeps the legacy home directory and label:
+  `~/.claude-to-im` and `com.claude-to-im.bridge`
+- A named instance gets its own home directory and launchd label:
+  `CTI_INSTANCE=codex` maps to `~/.claude-to-im-codex` and `com.claude-to-im.bridge.codex`
+
+Example:
+
+```bash
+# Keep the existing default bridge untouched
+bash ~/.codex/skills/claude-to-im/scripts/daemon.sh status
+
+# Start a second bridge for Codex
+CTI_INSTANCE=codex bash ~/.codex/skills/claude-to-im/scripts/daemon.sh start
+
+# Diagnose only the Codex bridge
+CTI_INSTANCE=codex bash ~/.codex/skills/claude-to-im/scripts/doctor.sh
+```
+
+You can also bypass the naming convention and point to any custom home directory:
+
+```bash
+CTI_HOME=~/.claude-to-im-feishu-2 bash ~/.codex/skills/claude-to-im/scripts/daemon.sh start
+```
+
 ## Commands
 
 All commands are run inside Claude Code or Codex:
@@ -243,3 +271,33 @@ npm run build      # Build bundle
 ## License
 
 [MIT](LICENSE)
+
+
+## Dual Runtime Deployment
+
+To keep **Claude Code** and **Codex** available at the same time, run them as two named bridge instances instead of sharing one state directory.
+
+Recommended layout:
+
+- `CTI_INSTANCE=cc` → `~/.claude-to-im-cc` → Feishu app for Claude Code
+- `CTI_INSTANCE=codex` → `~/.claude-to-im-codex` → Feishu app for Codex
+
+Example:
+
+```bash
+# Start Claude Code bridge
+CTI_INSTANCE=cc bash ~/.codex/skills/claude-to-im/scripts/daemon.sh start
+
+# Start Codex bridge
+CTI_INSTANCE=codex bash ~/.codex/skills/claude-to-im/scripts/daemon.sh start
+
+# Check each bridge independently
+CTI_INSTANCE=cc bash ~/.codex/skills/claude-to-im/scripts/daemon.sh status
+CTI_INSTANCE=codex bash ~/.codex/skills/claude-to-im/scripts/daemon.sh status
+```
+
+Migration note:
+
+- Legacy single-instance setups often shared `~/.claude-to-im`, which can cause session collisions and message stealing.
+- Migrate Claude Code and Codex to separate instances before enabling both bots in Feishu.
+- If sessions already crossed runtimes, clear the binding/session state for that instance before re-testing.

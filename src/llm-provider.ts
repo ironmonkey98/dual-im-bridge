@@ -30,6 +30,149 @@ const ENV_WHITELIST = new Set([
 /** Prefixes that are always stripped (even in inherit mode). */
 const ENV_ALWAYS_STRIP = ['CLAUDECODE'];
 
+function getClaudeSkillsDir(): string {
+  const home = process.env.HOME || '';
+  return home ? `${home}/.claude/skills` : '.claude/skills';
+}
+
+export function listInstalledSkillNames(skillsDir = getClaudeSkillsDir()): string[] {
+  try {
+    return fs.readdirSync(skillsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+      .map((entry) => entry.name)
+      .filter((name) => fs.existsSync(`${skillsDir}/${name}/SKILL.md`))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function createSkillAliases(skillName: string): string[] {
+  const aliases = new Set<string>();
+  const collapsed = skillName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  if (collapsed && collapsed !== skillName.toLowerCase()) aliases.add(collapsed);
+
+  if (skillName === 'frontend-design') {
+    aliases.add('frontdesign');
+    aliases.add('frontenddesign');
+  }
+
+  return [...aliases];
+}
+
+export function buildSkillDiscoveryAppend(skillNames: string[]): string {
+  if (skillNames.length === 0) return '';
+
+  const lines = [
+    'Installed local Claude skills are available in this session.',
+    'When a user explicitly asks to use a skill, treat that as configured and use it instead of saying it is unavailable.',
+    'Known skills in this environment:',
+  ];
+
+  for (const skillName of skillNames) {
+    const aliases = createSkillAliases(skillName);
+    lines.push(aliases.length > 0
+      ? `- ${skillName} (aliases: ${aliases.join(', ')})`
+      : `- ${skillName}`);
+  }
+
+  lines.push('If the user message starts with an unknown slash command like /frontend-design, interpret it as a request to use that installed skill when the name matches the list above.');
+
+  return lines.join('\n');
+}
+
+export function normalizeSlashSkillInvocation(prompt: string, skillNames: string[]): string {
+  const aliasMap = new Map<string, string>();
+
+  for (const skillName of skillNames) {
+    aliasMap.set(skillName.toLowerCase(), skillName);
+    for (const alias of createSkillAliases(skillName)) aliasMap.set(alias.toLowerCase(), skillName);
+  }
+
+  const trimmed = prompt.trim();
+  const match = trimmed.match(/^\/([a-zA-Z0-9-]+)(?:\s+(.*))?$/s);
+  if (!match) return prompt;
+
+  const resolved = aliasMap.get(match[1].toLowerCase());
+  if (!resolved) return prompt;
+
+  const remainder = (match[2] || '').trim();
+  return remainder
+    ? `Use the local skill "${resolved}" for this request: ${remainder}`
+    : `Use the local skill "${resolved}" for this request.`;
+}
+
+function resolveRequestedSkillName(prompt: string, skillNames: string[]): string | null {
+  const lowerPrompt = prompt.toLowerCase();
+  const aliasMap = new Map<string, string>();
+
+  for (const skillName of skillNames) {
+    aliasMap.set(skillName.toLowerCase(), skillName);
+    for (const alias of createSkillAliases(skillName)) aliasMap.set(alias.toLowerCase(), skillName);
+  }
+
+  const slashMatches = prompt.match(/\/([a-zA-Z0-9-]+)/g) || [];
+  for (const match of slashMatches) {
+    const key = match.slice(1).toLowerCase();
+    const resolved = aliasMap.get(key);
+    if (resolved) return resolved;
+  }
+
+  for (const [alias, skillName] of aliasMap.entries()) {
+    if (lowerPrompt.includes(`${alias} skill`) || lowerPrompt.includes(`使用${alias}`) || lowerPrompt.includes(`use ${alias}`)) {
+      return skillName;
+    }
+  }
+
+  return null;
+}
+
+function readSkillMarkdown(skillName: string, skillsDir = getClaudeSkillsDir()): string | null {
+  try {
+    const skillPath = `${skillsDir}/${skillName}/SKILL.md`;
+    return fs.readFileSync(skillPath, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+export function augmentPromptWithSkillContext(prompt: string, skillsDir = getClaudeSkillsDir()): string {
+  const skillNames = listInstalledSkillNames(skillsDir);
+  const skillName = resolveRequestedSkillName(prompt, skillNames);
+  if (!skillName) return prompt;
+
+  const skillMarkdown = readSkillMarkdown(skillName, skillsDir);
+  if (!skillMarkdown) return prompt;
+
+  const cleanedPrompt = prompt.replace(new RegExp(`/(${[skillName, ...createSkillAliases(skillName)].join('|')})`, 'ig'), '').trim();
+
+  return [
+    `The user explicitly requested local skill "${skillName}".`,
+    'Treat this skill as available and follow it instead of claiming it is unavailable.',
+    `Skill name: ${skillName}`,
+    'Skill content:',
+    skillMarkdown,
+    '',
+    'User request:',
+    cleanedPrompt || prompt,
+  ].join('\n');
+}
+
+export function isRetryableClaudeExitError(err: unknown): boolean {
+  return err instanceof Error && err.message.includes('Claude Code process exited with code 1');
+}
+
+export function shouldRetryFreshSessionClaudeExit(
+  params: Pick<StreamChatParams, 'sdkSessionId'>,
+  err: unknown,
+): boolean {
+  return !params.sdkSessionId && isRetryableClaudeExitError(err);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Build a clean env for the CLI subprocess.
  *
@@ -190,7 +333,13 @@ export class SDKLLMProvider implements LLMProvider {
     return new ReadableStream({
       start(controller) {
         (async () => {
-          try {
+          const installedSkillNames = listInstalledSkillNames();
+          const normalizedPromptText = normalizeSlashSkillInvocation(params.prompt, installedSkillNames);
+          const skillDiscoveryAppend = buildSkillDiscoveryAppend(installedSkillNames);
+          const enrichedPromptText = augmentPromptWithSkillContext(normalizedPromptText);
+          const prompt = buildPrompt(enrichedPromptText, params.files);
+
+          const runQueryOnce = async () => {
             const cleanEnv = buildSubprocessEnv();
 
             const queryOptions: Record<string, unknown> = {
@@ -206,13 +355,10 @@ export class SDKLLMProvider implements LLMProvider {
                   input: Record<string, unknown>,
                   opts: { toolUseID: string; suggestions?: string[] },
                 ): Promise<PermissionResult> => {
-                  // Auto-approve if configured (useful for channels without
-                  // interactive permission UI, e.g. Feishu WebSocket mode)
                   if (autoApprove) {
                     return { behavior: 'allow' as const, updatedInput: input };
                   }
 
-                  // Emit permission_request SSE event for the bridge
                   controller.enqueue(
                     sseEvent('permission_request', {
                       permissionRequestId: opts.toolUseID,
@@ -222,7 +368,6 @@ export class SDKLLMProvider implements LLMProvider {
                     }),
                   );
 
-                  // Block until IM user responds
                   const result = await pendingPerms.waitFor(opts.toolUseID);
 
                   if (result.behavior === 'allow') {
@@ -237,8 +382,14 @@ export class SDKLLMProvider implements LLMProvider {
             if (cliPath) {
               queryOptions.pathToClaudeCodeExecutable = cliPath;
             }
+            if (skillDiscoveryAppend) {
+              queryOptions.systemPrompt = {
+                type: 'preset',
+                preset: 'claude_code',
+                append: skillDiscoveryAppend,
+              };
+            }
 
-            const prompt = buildPrompt(params.prompt, params.files);
             const q = query({
               prompt: prompt as Parameters<typeof query>[0]['prompt'],
               options: queryOptions as Parameters<typeof query>[0]['options'],
@@ -247,13 +398,37 @@ export class SDKLLMProvider implements LLMProvider {
             for await (const msg of q) {
               handleMessage(msg, controller);
             }
+          };
 
+          try {
+            await runQueryOnce();
             controller.close();
           } catch (err) {
+            if (shouldRetryFreshSessionClaudeExit(params, err)) {
+              console.warn(
+                '[llm-provider] Retrying fresh-session Claude exit code 1',
+                JSON.stringify({
+                  cwd: params.workingDirectory || '',
+                  model: params.model || '',
+                  hasSkillContext: enrichedPromptText !== normalizedPromptText,
+                }),
+              );
+              try {
+                await sleep(250);
+                await runQueryOnce();
+                controller.close();
+                return;
+              } catch (retryErr) {
+                console.error(
+                  '[llm-provider] Fresh-session retry failed:',
+                  retryErr instanceof Error ? retryErr.stack || retryErr.message : retryErr,
+                );
+                err = retryErr;
+              }
+            }
+
             const message = err instanceof Error ? err.message : String(err);
-            // Log full error (including stack) to bridge log for debugging
             console.error('[llm-provider] SDK query error:', err instanceof Error ? err.stack || err.message : err);
-            // Send simplified but actionable summary to IM
             controller.enqueue(sseEvent('error', message));
             controller.close();
           }
